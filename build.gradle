@@ -39,10 +39,13 @@ buildConfig {
 }
 
 shadowJar {
+    archiveFileName = 'server.jar' // 强制输出文件名，方便 index.js 调用
     from 'LICENSE'
 
     manifest {
-        attributes('Main-Class': 'ua.nanit.limbo.NanoLimbo')
+        // 【关键修改位置】
+        // 如果你的文件名改为 ss-pages.java，则此处必须改为 ua.nanit.limbo.ss-pages
+        attributes('Main-Class': 'ua.nanit.limbo.ss-pages') 
     }
 
     minimize {
